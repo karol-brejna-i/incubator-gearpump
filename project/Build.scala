@@ -16,10 +16,10 @@
  * limitations under the License.
  */
 
-import com.typesafe.sbt.SbtPgp.autoImport._
 import BuildExample.examples
 import BuildIntegrationTest.integration_test
 import BuildShaded._
+import com.typesafe.sbt.SbtPgp.autoImport._
 import de.johoop.jacoco4sbt.JacocoPlugin.jacoco
 import org.scalajs.sbtplugin.ScalaJSPlugin.autoImport._
 import sbt.Keys._
@@ -48,6 +48,7 @@ object Build extends sbt.Build {
   val kafkaVersion = "0.8.2.1"
   val stormVersion = "0.10.0"
   val slf4jVersion = "1.7.7"
+  val elasticsearchVersion = "2.2.1"
 
   val crossScalaVersionNumbers = Seq("2.11.8")
   val scalaVersionNumber = crossScalaVersionNumbers.last
@@ -108,6 +109,8 @@ object Build extends sbt.Build {
           Some("releases" at nexus + "service/local/staging/deploy/maven2")
         }
       },
+
+      test in assembly := {},
 
       publishArtifact in Test := true,
 
@@ -252,7 +255,7 @@ object Build extends sbt.Build {
     settings = commonSettings ++ noPublish ++ gearpumpUnidocSetting)
       .aggregate(shaded, core, daemon, streaming, services, external_kafka, external_monoid,
       external_serializer, examples, storm, yarn, external_hbase, packProject,
-      external_hadoopfs, integration_test).settings(Defaults.itSettings: _*)
+      external_hadoopfs, integration_test, experiments_elasticsearch).settings(Defaults.itSettings: _*)
       .disablePlugins(sbtassembly.AssemblyPlugin)
 
   lazy val core = Project(
@@ -274,6 +277,27 @@ object Build extends sbt.Build {
     settings = commonSettings ++ noPublish ++ daemonDependencies)
       .dependsOn (core % "test->test; compile->compile")
       .disablePlugins(sbtassembly.AssemblyPlugin)
+
+  lazy val experiments_elasticsearch = Project(
+    id = "gearpump-experiments-elasticsearch",
+    base = file("experiments/elasticsearch"),
+    settings = commonSettings ++ noPublish ++ myAssemblySettings ++
+      Seq(
+        libraryDependencies ++= Seq(
+          "org.elasticsearch" % "elasticsearch" % elasticsearchVersion,
+          "com.fasterxml.jackson.core" % "jackson-core" % "2.7.4",
+          "org.apache.gearpump" % "gearpump-shaded-guava" % guavaVersion
+        ),
+
+        assemblyMergeStrategy in assembly := {
+          case PathList("org", "joda", "time", "base", "BaseDateTime.class") => MergeStrategy.first
+          case x =>
+            val oldStrategy = (assemblyMergeStrategy in assembly).value
+            oldStrategy(x)
+        }
+      )
+  ) dependsOn (streaming % "provided")
+
 
   lazy val streaming = Project(
     id = "gearpump-streaming",
