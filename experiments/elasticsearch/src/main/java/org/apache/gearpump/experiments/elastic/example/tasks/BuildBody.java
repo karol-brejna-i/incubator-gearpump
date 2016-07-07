@@ -16,57 +16,52 @@
  * limitations under the License.
  */
 
-package org.apache.gearpump.experiments.elastic.example;
+package org.apache.gearpump.experiments.elastic.example.tasks;
 
 import org.apache.gearpump.Message;
 import org.apache.gearpump.cluster.UserConfig;
+import org.apache.gearpump.experiments.elastic.example.builders.ElasticMsgBuilder;
+import org.apache.gearpump.experiments.elastic.example.builders.MessageBuilder;
+import org.apache.gearpump.experiments.elastic.example.builders.WordCountDocumentBuilder;
 import org.apache.gearpump.streaming.javaapi.Task;
 import org.apache.gearpump.streaming.task.StartTime;
 import org.apache.gearpump.streaming.task.TaskContext;
 import org.slf4j.Logger;
 import scala.Tuple2;
 
-import java.util.HashMap;
-
 public class BuildBody extends Task {
-    private static final String JSON_TEMPLATE = "{\"word\":\"%s\", \"count\":%d, \"sinkIndexTime\":%d}";
-
+    private MessageBuilder msgBuilder = new ElasticMsgBuilder(new WordCountDocumentBuilder());
     private Logger LOG = super.LOG();
-    private HashMap<String, Integer> wordCount = new HashMap<String, Integer>();
-
-    private Long now() {
-        return System.currentTimeMillis();
-    }
 
     public BuildBody(TaskContext taskContext, UserConfig userConf) {
         super(taskContext, userConf);
     }
 
-    @Override
-    public void onStart(StartTime startTime) {
-        System.out.println("-----buildBody onStart");
+    private Long now() {
+        return System.currentTimeMillis();
     }
 
+    @Override
+    public void onStart(StartTime startTime) {
+        LOG.info("-----buildBody onStart");
+    }
 
-    /**
+   /**
      * Expects:
-     *  word, count (String, Integer) - a tuple that consists from a word and it's frequency (count)
+     * word, count (String, Integer) - a tuple that consists from a word and it's frequency (count)
      * Issues:
-     *  json-document (String) - a json representation of the message. sth like {"word": count}
+     * json-document (String) - a json representation of the message. sth like {"word": count}
      *
      * @param message
      */
     @Override
     public void onNext(Message message) {
-        System.out.println("-----buildBody onNext: " + message);
+        LOG.debug("-----buildBody onNext: {}", message);
         Object payload = message.msg();
 
         // we expect (word, count) tuple
         if (payload instanceof Tuple2) {
-            String word = (String) ((Tuple2) payload)._1();
-            Integer count = (Integer) ((Tuple2) payload)._2();
-            String body = String.format(JSON_TEMPLATE, word, count, now());
-            context.output(new Message(body, now()));
+            context.output(msgBuilder.build(payload));
         } else {
             LOG.warn("I don't know what to do with the message :(");
         }

@@ -1,39 +1,23 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package org.apache.gearpump.experiments.elastic.example;
-
 
 import com.typesafe.config.Config;
 import org.apache.gearpump.cluster.ClusterConfig;
 import org.apache.gearpump.cluster.UserConfig;
 import org.apache.gearpump.cluster.client.ClientContext;
-
 import org.apache.gearpump.experiments.elastic.example.tasks.BuildBody;
 import org.apache.gearpump.experiments.elastic.example.tasks.BuildBodyWithId;
-import org.apache.gearpump.experiments.elastic.example.tasks.Split;
+import org.apache.gearpump.experiments.elastic.example.tasks.KafkaSplit;
 import org.apache.gearpump.experiments.elastic.example.tasks.Sum;
+import org.apache.gearpump.experiments.elastic.sink.ConsoleSink;
+import org.apache.gearpump.experiments.elastic.sink.ElasticsearchSimpleSink;
 import org.apache.gearpump.partitioner.HashPartitioner;
 import org.apache.gearpump.partitioner.Partitioner;
 import org.apache.gearpump.streaming.javaapi.Graph;
 import org.apache.gearpump.streaming.javaapi.Processor;
 import org.apache.gearpump.streaming.javaapi.StreamApplication;
-import org.apache.gearpump.experiments.elastic.sink.ConsoleSink;
-import org.apache.gearpump.experiments.elastic.sink.ElasticsearchSimpleSink;
+import org.apache.gearpump.streaming.kafka.KafkaSource;
+import org.apache.gearpump.streaming.kafka.KafkaStoreFactory;
+import org.apache.gearpump.streaming.kafka.util.KafkaConfig;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -41,12 +25,12 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Properties;
 
 /**
  * Java word count example that stores the results to Elasticsearch.
  */
-public class WordCount {
-
+public class KafkaWordCount {
     public static void main(String[] args) throws InterruptedException {
         main(ClusterConfig.defaultConfig(), args);
     }
@@ -54,9 +38,23 @@ public class WordCount {
     public static void main(Config akkaConf, String[] args) throws InterruptedException {
         ClientContext masterClient = new ClientContext(akkaConf);
 
+        String sourceTopic = "test";
+        String appName = "KafkaWordCount";
+        Properties props = new Properties();
+        props.put(KafkaConfig.ZOOKEEPER_CONNECT_CONFIG, "localhost:2181");
+        props.put(KafkaConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        //props.put(KafkaConfig.CONSUMER_START_OFFSET_CONFIG, new java.lang.Long(OffsetRequest.LatestTime));
+        props.put(KafkaConfig.CHECKPOINT_STORE_NAME_PREFIX_CONFIG, appName);
+
+        KafkaStoreFactory checkpointStoreFactory = new KafkaStoreFactory(props);
+        KafkaSource kafkaSource = new KafkaSource(sourceTopic, props);
+        kafkaSource.setCheckpointStore(checkpointStoreFactory);
+
+        Processor sourceProcessor = Processor.source(kafkaSource, 1, "kafkaSource", UserConfig.empty(), masterClient.system());
+
         // Task for producing words
         int splitTaskNumber = 1;
-        Processor split = new Processor(Split.class).withParallelism(splitTaskNumber);
+        Processor split = new Processor(KafkaSplit.class).withParallelism(splitTaskNumber);
 
         // Task for computing of word counts
         int sumTaskNumber = 1;
@@ -78,16 +76,16 @@ public class WordCount {
         }
 
         // first elasticsearch sink
-        ElasticsearchSimpleSink elasticSink = new ElasticsearchSimpleSink("gearpump-test", "myindex2", "mytype", transportAddresses, new HashMap());
+        ElasticsearchSimpleSink elasticSink = new ElasticsearchSimpleSink("gearpump-test", "myindex", "mytype", transportAddresses, new HashMap());
         Processor elasticSinkProcessor = Processor.sink(elasticSink, 1, "elasticSink", UserConfig.empty(), masterClient.system());
 
         // second elasticsearch sink
-        ElasticsearchSimpleSink elasticSink2 = new ElasticsearchSimpleSink("gearpump-test", "myindex", "mytype2", transportAddresses, new HashMap());
+        ElasticsearchSimpleSink elasticSink2 = new ElasticsearchSimpleSink("gearpump-test", "myindex2", "mytype2", transportAddresses, new HashMap());
         Processor elasticSinkProcessor2 = Processor.sink(elasticSink2, 1, "elasticSink-id", UserConfig.empty(), masterClient.system());
-
 
         // construct the graph
         Graph graph = new Graph();
+        graph.addVertex(sourceProcessor);
         graph.addVertex(split);
         graph.addVertex(sum);
         graph.addVertex(consoleSinkProcessor);
@@ -97,6 +95,7 @@ public class WordCount {
         graph.addVertex(elasticSinkProcessor2);
 
         Partitioner partitioner = new HashPartitioner();
+        graph.addEdge(sourceProcessor, partitioner, split);
         graph.addEdge(split, partitioner, sum);
         graph.addEdge(split, partitioner, consoleSinkProcessor);
         graph.addEdge(sum, partitioner, buildBody);
@@ -106,7 +105,7 @@ public class WordCount {
         graph.addEdge(buildBodyWithId, partitioner, elasticSinkProcessor2);
 
         UserConfig conf = UserConfig.empty();
-        StreamApplication app = new StreamApplication("wordcountElastic", conf, graph);
+        StreamApplication app = new StreamApplication(appName, conf, graph);
 
         masterClient.submit(app);
         masterClient.close();

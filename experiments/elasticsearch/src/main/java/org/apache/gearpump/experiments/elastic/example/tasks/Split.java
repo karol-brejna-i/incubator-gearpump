@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.gearpump.experiments.elastic.example;
+package org.apache.gearpump.experiments.elastic.example.tasks;
 
 import org.apache.gearpump.Message;
 import org.apache.gearpump.cluster.UserConfig;

@@ -296,7 +296,7 @@ object Build extends sbt.Build {
             oldStrategy(x)
         }
       )
-  ) dependsOn (streaming % "provided")
+  ) dependsOn (streaming % "provided", external_kafka)
 
 
   lazy val streaming = Project(
