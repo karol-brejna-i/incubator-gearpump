@@ -38,6 +38,20 @@ public class KafkaWordCount {
     public static void main(Config akkaConf, String[] args) throws InterruptedException {
         ClientContext masterClient = new ClientContext(akkaConf);
 
+        /*
+         * Input params:
+         *  inputTopic
+          * zookeeper servers
+          * bootstrap servers
+          *
+          * elasticsearch cluster name
+          * nodes addresses "127.0.0.1":9300
+          *
+          * ?? index name
+          * ?? type name
+         */
+
+
         String sourceTopic = "test";
         String appName = "KafkaWordCount";
         Properties props = new Properties();
