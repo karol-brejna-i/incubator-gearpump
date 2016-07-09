@@ -28,7 +28,8 @@ object BuildExample extends sbt.Build {
     base = file("examples"),
     settings = commonSettings ++ noPublish
   ).aggregate(wordcount, wordcountJava, complexdag, sol, fsio, examples_kafka,
-    distributedshell, stockcrawler, transport, examples_state, pagerank, distributeservice).
+    distributedshell, stockcrawler, transport, examples_state, pagerank, distributeservice,
+    examples_elasticsearch).
     disablePlugins(sbtassembly.AssemblyPlugin)
 
   lazy val wordcountJava = Project(
@@ -171,6 +172,27 @@ object BuildExample extends sbt.Build {
           CrossVersion.binaryScalaVersion(scalaVersion.value)
       )
   ) dependsOn(streaming % "test->test; provided", external_kafka)
+
+
+  val guavaVersion = "16.0.1"
+  lazy val examples_elasticsearch = Project(
+    id = "gearpump-examples-elasticsearch",
+    base = file("experiments/elasticsearch-example"),
+    settings = commonSettings ++ noPublish ++ myAssemblySettings ++
+      Seq(
+        libraryDependencies ++= Seq(
+          "com.fasterxml.jackson.core" % "jackson-core" % "2.7.4",
+          "commons-cli" % "commons-cli" % "1.3.1"
+        ),
+
+        assemblyMergeStrategy in assembly := {
+          case PathList("org", "joda", "time", "base", "BaseDateTime.class") => MergeStrategy.first
+          case x =>
+            val oldStrategy = (assemblyMergeStrategy in assembly).value
+            oldStrategy(x)
+        }
+      )
+  ) dependsOn (streaming % "provided", experiments_elasticsearch, external_kafka)
 
   lazy val stockcrawler = Project(
     id = "gearpump-examples-stockcrawler",
